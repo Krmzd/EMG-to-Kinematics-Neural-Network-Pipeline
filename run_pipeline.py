@@ -67,7 +67,7 @@ def main() -> None:
         subjects=config.Participants,
         raw_dir=config.Raw_data_path,
         output_dir=config.Output_path,
-        side_config=config.Side_map["side_map"],  # Reaching into your Side_map dict
+        side_config=config.Side_map["side_map"],  # Reaching into Side_map dict
         cutoff=config.Lowpass_cutoff,
     )
 
