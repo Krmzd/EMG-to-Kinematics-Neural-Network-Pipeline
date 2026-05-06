@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import os
 from scipy.signal import butter, filtfilt
 from typing import Tuple, Dict, List
 from pathlib import Path
