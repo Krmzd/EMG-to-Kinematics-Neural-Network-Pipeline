@@ -47,6 +47,8 @@ class Preprocess:
         return matches[0]
 
     def handle_nans(self, df: pd.DataFrame) -> pd.DataFrame:
+
+        df = df.apply(pd.to_numeric, errors='coerce')
         return df.interpolate(method="linear", limit_direction="both").ffill().bfill()
 
     def _z_score_data(self, df_list: List[pd.DataFrame]) -> Tuple[pd.DataFrame, Dict]:
@@ -62,10 +64,10 @@ class Preprocess:
     def process_emg(self, emg_df: pd.DataFrame) -> pd.DataFrame:
         """Full EMG chain: NaNs -> Rectify -> Filter -> Downsample."""
 
-        emg_df = self._handle_nans(emg_df)  # Fix NaNs
+        emg_df = self.handle_nans(emg_df)  # Fix NaNs
         emg_rectified = emg_df.abs()  # Rectify (Absolute Value)
         emg_filtered = emg_rectified.apply(
-            self._butter_lowpass_filter
+            self.butter_lowpass_filter
         )  # Low-pass Filter (Linear Envelope)
 
         return (
@@ -78,34 +80,27 @@ class Preprocess:
         self, file_path: Path, feature_map: Dict, target_map: Dict
     ) -> pd.DataFrame:
         # Locate the anchors
-        emg_idx = self._find_keyword(file_path, "Devices")
-        joint_idx = self._find_keyword(file_path, "Joints")
-        model_idx = self._find_keyword(file_path, "Model Outputs")
+        emg_idx = self.find_keyword(file_path, "Devices")
+        joint_idx = self.find_keyword(file_path, "Joints")
+        model_idx = self.find_keyword(file_path, "Model Outputs")
 
         # Extract EMG
         emg_header = (
-            pd.read_csv(file_path, skiprows=emg_idx + 2, nrows=1, header=None)
+            pd.read_csv(file_path, skiprows=emg_idx + 3, nrows=1, header=None)
             .iloc[0]
             .tolist()
         )
+        emg_header = [str(n).strip() for n in emg_header]
+        
+        # Find column numbers for muscles
+        emg_indices = [emg_header.index(m) for m in feature_map.keys()]
 
-        emg_col_indices = []
-
-        for muscle_name in feature_map.keys():
-            try:
-                idx = emg_header.index(muscle_name)
-                emg_col_indices.append(idx)
-            except ValueError:
-                logger.error(f"Muscle '{muscle_name}' not found in {file_path.name}")
-                raise
-
-        num_emg_rows = joint_idx - emg_idx - 5
+        num_emg_rows = joint_idx - emg_idx - 6
         emg_raw = pd.read_csv(
-            file_path, usecols=emg_col_indices, skiprows=emg_idx + 4, nrows=num_emg_rows
+            file_path, usecols=emg_indices, skiprows=emg_idx + 5, nrows=num_emg_rows, header=None
         )
-        emg_clean = self.process_emg(emg_raw).rename(
-            columns=feature_map
-        )  # Process: NaNs, -> Rectifu -> Filter -> Downsample
+        emg_raw.columns = list(feature_map.values()) # Rename to generic RF, BF
+        emg_clean = self.process_emg(emg_raw)  # Process: NaNs, -> Rectifu -> Filter -> Downsample
 
         # Read the header row for Model Outputs
         kin_header = (
@@ -113,6 +108,10 @@ class Preprocess:
             .iloc[0]
             .tolist()
         )
+        kin_header = [str(n).strip() for n in kin_header]
+
+        # Find column number for Joint X
+        kin_indices = [kin_header.index(j) for j in target_map.keys()]
 
         kin_col_indices = []
         for kin_name in target_map.keys():
@@ -124,11 +123,13 @@ class Preprocess:
                 raise
 
         kin_raw = pd.read_csv(
-            file_path, usecols=target_map, skiprows=model_idx + 4
+            file_path, usecols=kin_indices, skiprows=model_idx + 5
         )  # Extract the target
+
+        kin_raw.columns = list(target_map.values()) # Rename to Knee_Angle_X
+
         kin_clean = (
-            self._handle_nans(kin_raw).reset_index(drop=True).rename(columns=target_map)
-        )  # clean kinematics
+            self.handle_nans(kin_raw).reset_index(drop=True))  # clean kinematics
 
         # Final sync
         min_len = min(len(emg_clean), len(kin_clean))  # Sync lengths and stitch
@@ -172,11 +173,11 @@ class Preprocess:
             except Exception as e:
                 logger.error(f"Skipping file {f.name} due to error: {e}")
 
-            df_r_norm, stats_r = self._z_score_data(right_trials)
-            df_r_norm["Side"] = "Right"
+        df_r_norm, stats_r = self._z_score_data(right_trials)
+        df_r_norm["Side"] = "Right"
 
-            df_l_norm, stats_l = self._z_score_data(left_trials)
-            df_l_norm["Side"] = "Left"
+        df_l_norm, stats_l = self._z_score_data(left_trials)
+        df_l_norm["Side"] = "Left"
 
-            subject_df = pd.concat([df_r_norm, df_l_norm], ignore_index=True)
-            return subject_df, {"Right": stats_r, "Left": stats_l}
+        subject_df = pd.concat([df_r_norm, df_l_norm], ignore_index=True)
+        return subject_df, {"Right": stats_r, "Left": stats_l}
