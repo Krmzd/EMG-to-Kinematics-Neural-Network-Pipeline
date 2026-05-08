@@ -3,7 +3,6 @@ import numpy as np
 from scipy.signal import butter, filtfilt
 from typing import Tuple, Dict, List
 from pathlib import Path
-
 import logging
 
 logging.basicConfig(level=logging.INFO)
