@@ -7,7 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 import config
 import logging
 
-logger = logging.getLogger(__name__) 
+logger = logging.getLogger("Data_loder") 
 
 class GaitDataset(Dataset):
     def __init__(self, data: pd.DataFrame, window_size: int = 1):
