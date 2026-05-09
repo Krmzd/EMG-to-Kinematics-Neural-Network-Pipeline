@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.linear_model import LinearRegression
+import config 
 
 # Multiple linear regression (Scikit-Learn)
 def mlr_model():
@@ -26,7 +27,7 @@ class Attention_module(nn.Module):
     
 # CNN-LSTM (PyTorch)
 class CNN_LSTM(nn.Module):
-    def __init__(self, n_features, hidden_dim, n_outputs):
+    def __init__(self, n_features=config.N_features, hidden_dim=config.Hidden_dim, n_outputs=config.N_outputs):
         super().__init__()
         # CNN extracts spatial muscle patterns
         self.cnn = nn.Conv1d(in_channels=n_features, out_channels=32, kernel_size=3, padding=1)
@@ -46,7 +47,7 @@ class CNN_LSTM(nn.Module):
     
 # Model Bi-directional LSTM (PyTorch)
 class CNN_LSTM(nn.Module):
-    def __init__(self, n_features, hidden_dim, n_outputs):
+    def __init__(self, n_features=config.N_features, hidden_dim=config.Hidden_dim, n_outputs=config.N_outputs):
         super().__init__()
         self.cnn = nn.Conv1d(in_channels=n_features, out_channels=32, kernel_size=3, padding=1)
         self.lstm = nn.LSTM(input_size=32, hidden_size=hidden_dim, batch_first=True, bidirectional=True)
@@ -61,7 +62,7 @@ class CNN_LSTM(nn.Module):
     
 # CNN_LSTM + Attention 
 class CNN_LSTM_attention(nn.Module):
-    def __init__(self, n_features, hidden_dim, n_outputs):
+    def __init__(self, n_features=config.N_features, hidden_dim=config.Hidden_dim, n_outputs=config.N_outputs):
         super().__init__()
         self.cnn = nn.Conv1d(in_channels=n_features, out_channels=32, kernel_size=3, padding=1)
         self.lstm = nn.LSTM(input_size=32, hidden_size=hidden_dim, batch_first=True)
@@ -78,7 +79,7 @@ class CNN_LSTM_attention(nn.Module):
     
 # CNN_BiLSTM + Attention
 class CNN_BiLSTM_Attention(nn.Module):
-    def __init__(self, n_features, hidden_dim, n_outputs):
+    def __init__(self, n_features=config.N_features, hidden_dim=config.Hidden_dim, n_outputs=config.N_outputs):
         super().__init__()
         self.cnn = nn.Conv1d(in_channels=n_features, out_channels=32, kernel_size=3, padding=1)
         self.lstm = nn.LSTM(input_size=32, hidden_size=hidden_dim, batch_first=True, bidirectional=True)
