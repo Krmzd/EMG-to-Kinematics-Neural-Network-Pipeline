@@ -19,6 +19,11 @@ Window_Size = 50
 Batch_Size = 32
 Learning_rate = 0.001
 
+# Model Architecture Settings
+Hidden_dim = 64
+N_features = 4  # 8 muscles (csv files has 4 columns)
+N_outputs = 1   # 1 joint angle (Knee X)
+
 Side_map = {
     "subjects": ["JP", "MY", "ZK"],
     "lowpass_cutoff": 6.0,
