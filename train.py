@@ -83,38 +83,50 @@ def run_loso_exp(model_type="MLR"):
         train_subs = [s for s in config.Participants if s != test_sub]
 
         if model_type == "MLR":
+
+            # We need the 'Side' column before we drop it for the math
+            path = config.Output_path / f"{test_sub}_combined_ready.csv"
+            test_df = pd.read_csv(path)
+            side_labels = test_df['Side'].values # Grab side
             # Get Arrays
             train_input = data_loader.get_mlr_data(train_subs)
             test_input = data_loader.get_mlr_data([test_sub])
         else:
+            path = config.Output_path / f"{test_sub}_combined_ready.csv"
+            side_labels = pd.read_csv(path)['Side'].values[config.Window_Size:] # Match window offset
             # Get DataLoaders
             train_input = data_loader.get_torch_loader(train_subs, config.Window_Size, config.Batch_Size, shuffle=True)
             test_input  = data_loader.get_torch_loader([test_sub], config.Window_Size, config.Batch_Size, shuffle=False)
 
         y_true, y_pred = engine.train_and_predict(train_input, test_input)
-        results[test_sub] = {"true": y_true, "pred": y_pred}
+        results[test_sub] = {"true": y_true, "pred": y_pred, "side": side_labels}
 
     joblib.dump(results, config.Output_path / f"loso_{model_type}_results.pkl")
     logger.info(f"LOSO experiment for {model_type} finished and saved.")
 
 # Within-Subject (Intra-Subject)
 def run_intra_subject_exp(model_type="MLR"):
-    logger.info(f"🚀 Starting Intra-Subject Experiment using {model_type}")
+    logger.info(f"Starting Intra-Subject Experiment using {model_type}")
     engine = Engine(model_type)
     results = {}
 
     for sub in config.Participants:
+        # Load the labels for the specific participant
+        path = config.Output_path / f"{sub}_combined_ready.csv"
+        df = pd.read_csv(path)
+        split = int(len(df) * 0.8)
+
         if model_type == "MLR":
             x, y = data_loader.get_mlr_data([sub])
-            split = int(len(x) * 0.8)
             train_input = (x[:split], y[:split])
             test_input = (x[split:], y[split:])
+            side_labels = df['Side'].values[split:] # Grab side labels from index 'split' to the end
         else:
             # For Torch, we split the CSV first (simplest way)
             train_input, test_input = data_loader.get_intra_loader(sub, config.Window_Size, config.Batch_Size)
-
+            side_labels = df['Side'].values[split + config.Window_Size:]# Match window offset (skip first 50 frames of the test set)
         y_true, y_pred = engine.train_and_predict(train_input, test_input)
-        results[sub] = {"true": y_true, "pred": y_pred}
+        results[sub] = {"true": y_true, "pred": y_pred, "side": side_labels}
 
     joblib.dump(results, config.Output_path / f"intra_{model_type}_results.pkl")
     logger.info(f"Intra-Subject experiment for {model_type} finished and saved.")
