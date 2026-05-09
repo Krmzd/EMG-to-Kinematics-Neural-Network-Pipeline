@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import torch
 from typing import Tuple
-from pathlib import path
 from torch.utils.data import Dataset, DataLoader
 import config
 import logging
@@ -35,24 +34,65 @@ def get_mlr_data(participants_list: list):
     """
     all_dfs = []
     for sub in participants_list:
-        df = pd.read_csv(config.Output_path / f"{sub}_ready.csv")
+        path = config.Output_path / f"{sub}_combined_ready.csv"
+
         if not path.exists():
-            logger.error(f"ready_sub for {sub} not found at {path}")
             raise FileNotFoundError(f"Missing file: {path}")
-        all_dfs.append(df)
-    
-    combined_df = pd.concat(all_dfs)
-    
+        
+        combined_df = pd.concat(all_dfs, ignore_index=True)
+        x = combined_df.drop(columns=['Knee_Angle_X', 'Side']).values
+        y = combined_df['Knee_Angle_X'].values
+
+        return x, y
+
     # MLR only needs simple X and y arrays
     x = combined_df.drop(columns=['Knee_Angle_X', 'Side']).values
     y = combined_df['Knee_Angle_X'].values
     
     return x, y
 
-def get_torch_loader(participant, window_size, batch_size, shuffle=True):
+def get_torch_loader(subject_list: list, window_size: int, batch_size: int, shuffle=True):
     """
+    Stacks multiple participants for training.
     Returns a PyTorch DataLoader for CNN/LSTM models.
     """
-    df = pd.read_csv(config.Output_path / f"{participant} ready_sub.csv")
-    dataset = GaitDataset(df, window_size=window_size)
+    all_dfs = []
+
+    # Loop through the list of subjects
+    for sub in subject_list:
+        # Match exact filename from Processed_Results
+        path = config.Output_path / f"{sub}_combined_ready.csv"
+        all_dfs.append(pd.read_csv(path))
+
+        if not path.exists():
+            logger.error(f"Could not find {path}. Did you run the pipeline?")
+            raise FileNotFoundError(f"Missing: {path}")
+            
+        all_dfs.append(pd.read_csv(path))
+
+    # Stack them vertically into one training pool
+    combined_df = pd.concat(all_dfs, ignore_index=True)
+    # Iinitialize the Dataset with the provided window size
+    dataset = GaitDataset(combined_df, window_size=window_size)
+    
+    # Return the DataLoader
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+
+def get_intra_loader(subject: str, window_size: int, batch_size: int):
+    """ Returns two DataLoaders (Train/Test) for a single-subject 80/20 split. """
+    path = config.Output_path / f"{subject}_combined_ready.csv"
+
+    if not path.exists():
+        logger.error(f"File not found: {path}")
+        raise FileNotFoundError(f"Missing file for subject {subject}")
+    
+    df = pd.read_csv(path)
+    split = int(len(df) * 0.8)
+    
+    train_ds = GaitDataset(df.iloc[:split], window_size)
+    test_ds = GaitDataset(df.iloc[split:], window_size)
+    
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
+    
+    return train_loader, test_loader
