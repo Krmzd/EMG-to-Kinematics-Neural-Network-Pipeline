@@ -2,7 +2,7 @@
 
 **Overview:** Predicting the actual joint angle enables continuous control and supports smoother, more natural real-time human-robot interaction. This project uses surface electromyography (sEMG) to predict continuous knee joint angle during walking. predicting the actual joint angle directly enables continuous, real-time results, supporting smoother human-robot interaction for applications like exoskeletons and prosthetics. This approach is grounded in the principle of myoelectric control: because a muscle generates an electrical signal before it physically contracts and produces movement,this lead time is significant for real-world robotic systems, which have their own inherent processing and actuation delays, predicting joint angle from EMG signals recorded ahead of the resulting movement can help compensate for those delays, supporting more responsive, naturally-timed device control.
 
-**Project structure:** 
+## **Project structure:** 
 run_pipeline.py   - preprocesses raw EMG per subject
 process.py        - Preprocess class: filtering, syncing
 data_loader.py     - windowing, normalization, train/test splitting
@@ -19,7 +19,7 @@ This dataset contains EMG and kinematic recordings from 3 healthy subjects (one 
 EMG channels: Rectus Femoris (RF), Biceps Femoris (BF), Tibialis Anterior (TA), Soleus (SOL).
 Target: Knee flexion/extension angle (`Knee_Angle_X`), recorded via motion capture at 100 Hz.
 
-**Results**
+## **Results**
 Results below are from the INTRA-subject experiment (trial-level train/test split), reported in degrees.
 | Model | MAE | RMSE | R² |
 |---|---|---|---|
