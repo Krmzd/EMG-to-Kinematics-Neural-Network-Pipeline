@@ -12,7 +12,7 @@ evaluation.py     - converts results to degrees, computes MAE/RMSE/R2
 Visualization.py  - plots time series, gait cycle, learning curves
 config.py         - all settings (paths, window size, hyperparameters)
 ```
-**Setup / Installation:**
+## **Setup / Installation:**
 ### Requirements
 - Python 3.9
 ## **Data:**
