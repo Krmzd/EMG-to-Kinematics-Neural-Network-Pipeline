@@ -118,10 +118,7 @@ class Preprocess:
         data_start = emg_idx + 5
         num_emg_rows = joint_idx - emg_idx - 6
 
-        start_frame = int(
-            pd.read_csv(raw_path, usecols=[0], skiprows=data_start,
-                        nrows=1, header=None).iloc[0, 0]
-        )
+        start_frame = int(pd.read_csv(raw_path, usecols=[0], skiprows=data_start, nrows=1, header=None).iloc[0, 0])
 
         emg_raw = pd.read_csv(
             raw_path, usecols=emg_indices, skiprows=data_start,

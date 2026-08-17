@@ -1,11 +1,8 @@
 import pandas as pd
-import numpy as np
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
 import joblib
 import logging
-
 import config
-
 logger = logging.getLogger("Evaluator")
 
 class Evaluator:
@@ -15,30 +12,28 @@ class Evaluator:
             raise FileNotFoundError(f"Cannot find results file: {self.results_path}")
             
         self.raw_results = joblib.load(self.results_path)
+        # empty dictionary, ready to hold the evaluated (degrees + scored) version, filled in later by run_evaluation.
         self.processed_results = {}
-
-    def _get_subject_stats(self, subject_id):
-        """Loads the mu and sigma for a specific participant."""
-        stats_path = config.Output_path / f"{subject_id}_stats.pkl"
-        return joblib.load(stats_path)
-
+    # starts as an empty list, one entry will be added per subject, to build the final table at the end. 
     def run_evaluation(self):
-            """
-            Loops through every subject in the results, turns Z-scores 
-            into Degrees, and calculates scores.
-            """
+            #  Loops through every subject in the results, turns Z-scores into Degrees, and calculates scores.
+            
             logger.info(f"Evaluating: {self.results_path.name}")      
             summary_metrics = []
 
             for sub, data in self.raw_results.items():
-                # Get the scaling 'Key' for the participant
+                # Pulls out the mean and standard deviation of the real knee angle (in degrees) 
+                # that were computed from the training data and saved by train.py. Needed to undo normalization.
                 mu = data['stats']['mu']
                 sigma = data['stats']['sigma']
 
                 # Extract arrays 
+                # still in normalized (Z-score) form
                 y_true_z = data['true']
                 y_pred_z = data['pred']
 
+                # A safety trim, if the two arrays ever came out different lengths, 
+                # this cuts both down to match so the metrics below don't crash.
                 min_len = min(len(y_true_z), len(y_pred_z))
                 y_true_z = y_true_z[:min_len]
                 y_pred_z = y_pred_z[:min_len]
@@ -52,7 +47,7 @@ class Evaluator:
                 rmse = root_mean_squared_error(y_true_deg, y_pred_deg)
                 r2 = r2_score(y_true_deg, y_pred_deg)
 
-                # 4. Store
+                # Store
                 self.processed_results[sub] = {
                     "true_deg": y_true_deg,
                     "pred_deg": y_pred_deg,
@@ -73,7 +68,7 @@ class Evaluator:
 
 if __name__ == "__main__":
     # Choose which file to evaluae
-    File_to_store = "INTRA_LSTM_results.pkl"
+    File_to_store = "intra_LSTM_results.pkl"
 
     critic = Evaluator(File_to_store)
     report = critic.run_evaluation()
