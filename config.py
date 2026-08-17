@@ -1,53 +1,44 @@
-from pathlib import Path
 import os
+from pathlib import Path
 from dotenv import load_dotenv
+load_dotenv()
 
-
-load_dotenv() 
-# Directory setting
 Base_dir = Path(__file__).resolve().parent
-Raw_data_path = Path(os.getenv("Raw_data_path", "./Raw_Data"))
-Output_path = Path(os.getenv("Output_path", "./Processed_Results"))
+Raw_data_path = Path(os.getenv("RAW_DATA_PATH", Base_dir))
+Trimmed_data_path = Path(os.getenv("TRIMMED_DATA_PATH", Base_dir))
+Output_path = Path(os.getenv("OUTPUT_PATH", Base_dir / "Processed_Results"))
 
-#  Signal processing setting
 fs_EMG = 1000
 fs_kin = 100
 Lowpass_cutoff = 6.0
+EMG_bandpass_low = 10.0
+EMG_bandpass_high = 400.0
 
-# Model hyperparameters
-Window_Size = 50
 Batch_Size = 32
 Learning_rate = 0.001
-
-# Model Architecture Settings
+Weight_decay = 1e-4
+Epochs = 100
+Early_stop_patience = 30
 Hidden_dim = 64
-N_features = 4  # 8 muscles (csv files has 4 columns)
-N_outputs = 1   # 1 joint angle (Knee X)
+Dropout = 0.5  
+Window_Size = 25
+Split_seed = 1
+
+Feature_cols = ["RF", "BF", "TA", "SOL"]
+N_outputs = 1
 
 Side_map = {
-    "subjects": ["JP", "MY", "ZK"],
-    "lowpass_cutoff": 6.0,
-    # Column mappings for each side
     "side_map": {
         "Right": {
-            "features": {
-                "RRF": "RF",
-                "RBF": "BF",
-                "RTA": "TA",
-                "RSOL": "SOL",
-            },  # Right muscles
-            "target": {"RKneeAngles": "Knee_Angle_X"},  # Right Knee Angle
+            "features": {"RRF": "RF", "RBF": "BF", "RTA": "TA", "RSOL": "SOL"},
+            "target": {"RKneeAngles": "Knee_Angle_X"},
         },
         "Left": {
-            "features": {
-                "LRF": "RF",
-                "LBF": "BF",
-                "LTA": "TA",
-                "LSOL": "SOL",
-            },  # Left muscles
+            "features": {"LRF": "RF", "LBF": "BF", "LTA": "TA", "LSOL": "SOL"},
             "target": {"LKneeAngles": "Knee_Angle_X"},
-        },  # Left Knee Angle
+        },
     },
 }
 
-Participants = ["JP", "MY", "ZK"]
+Participants = ["MY", "JP"]
+Trimmed_suffix_patterns = ("_trimmed.csv", "_knee_corrected.csv")

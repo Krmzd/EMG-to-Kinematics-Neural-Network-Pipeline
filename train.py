@@ -1,140 +1,197 @@
-import torch
+import logging
+import copy
 import numpy as np
 import pandas as pd
+import joblib
+import torch
 import torch.nn as nn
 import torch.optim as optim
-import joblib
-import logging
-
+from torch.utils.data import DataLoader
 import config
 import models
-import data_loader
+from data_loader import GaitDataset, split_by_trial
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s]: %(message)s")
 logger = logging.getLogger("Trainer")
 
+torch.manual_seed(0)
+np.random.seed(0)
+
+class EarlyStopping:
+    def __init__(self, patience: int = 15, min_delta: float = 1e-4):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.best_loss = np.inf
+        self.counter = 0
+        self.best_weights = None
+
+    def step(self, val_loss: float, model: nn.Module) -> bool:
+        if val_loss < self.best_loss - self.min_delta:
+            self.best_loss = val_loss
+            self.counter = 0
+            self.best_weights = copy.deepcopy(model.state_dict())
+        else:
+            self.counter += 1
+        return self.counter >= self.patience
+
+    def restore_best(self, model: nn.Module) -> None:
+        if self.best_weights is not None:
+            model.load_state_dict(self.best_weights)
+            logger.info(f"  Restored best weights (val_loss={self.best_loss:.4f})")
+
+# Handles the machine-learning process for a single experiment:
+# model initialization, training, validation, learning-rate scheduling,
+# early stopping, and prediction on the test set.
 class Engine:
     def __init__(self, model_name: str):
         self.model_name = model_name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    def train_and_predict(self, train_input, test_input):
-        """
-        This part decides which internal engine to run based on the model name
-        """
-        if self.model_name == "MLR":
-            # Pass simple Arrays to the MLR worker
-            return self.run_mlr_logic(train_input, test_input)
-        else:
-            # Pass DataLoaders to the PyTorch worker
-            return self.run_torch_logic(train_input, test_input)
-        
-    # The MLR 
-    def run_mlr(self, train_data, test_data):
-        x_train, y_train = train_data
-        x_test, y_test = test_data
-
-        # Get model from models.py
-        model = models.get_mlr_model()
-        model.fit(x_train, y_train)
-
-        y_pred = model.predict(x_test)
-        return y_test, y_pred
-    
-    # Deep learning
-    def run_torch(self, train_loader, test_loader):
-        # Initialize the correct PyTorch model from model.py
-        # 'getattr' to find the class name automatically
+    # Public training interface that runs the PyTorch training and prediction pipeline.
+    def train_and_predict(self, train_input, test_input, val_input=None, n_features=None, dropout=None, weight_decay=None, hidden_dim=None, epochs=None, patience=None):
+        return self.run_torch(train_input, test_input, val_input, n_features, dropout, weight_decay, hidden_dim=hidden_dim, epochs=epochs, patience=patience)
+    # Run the full PyTorch training pipeline: initialize the model, train on the
+    # training set, validate during training, apply early stopping, and predict
+    # on the held-out test set.
+    def run_torch(self, train_input, test_input, val_input=None, n_features=None, dropout=None, weight_decay=None, hidden_dim=None, epochs=None, patience=None):
         model_class = getattr(models, self.model_name)
+        epochs = epochs if epochs is not None else config.Epochs
+        dropout = dropout if dropout is not None else config.Dropout
+        hidden_dim = hidden_dim if hidden_dim is not None else config.Hidden_dim
+        weight_decay = weight_decay if weight_decay is not None else config.Weight_decay
+        patience = patience if patience is not None else config.Early_stop_patience
+        model = model_class(n_features=n_features, hidden_dim=hidden_dim, n_outputs=config.N_outputs, dropout=dropout).to(self.device)
 
-        # Initialize it using the settings from config file
-        model = model_class(n_features=config.N_features, hidden_dim=config.Hidden_dim, n_outputs=config.N_outputs).to(self.device)
-
-        optimizer = optim.Adam(model.parameters(), lr=config.Learning_rate)
+        optimizer = optim.Adam(model.parameters(), lr=config.Learning_rate, weight_decay=weight_decay)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=5, factor=0.5)
         criterion = nn.MSELoss()
+        early_stop = EarlyStopping(patience=patience)
 
-        # Training Loop 
-        for epoch in range(20):
+        train_losses, val_losses = [], []
+
+        for epoch in range(epochs):
             model.train()
-            for batch_x, batch_y in train_loader:
-                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
+            batch_losses = []
+            for batch_x, batch_y in train_input:
+                batch_x = batch_x.to(self.device)
+                batch_y = batch_y.to(self.device)
                 optimizer.zero_grad()
-                loss = criterion(model(batch_x).squeeze(), batch_y)
+                pred = model(batch_x).squeeze()
+                loss = criterion(pred, batch_y)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
+                batch_losses.append(loss.item())
 
-        # Prediction phase
+            avg_train_loss = np.mean(batch_losses)
+            train_losses.append(avg_train_loss)
+
+            if val_input is not None:
+                avg_val_loss = self.evaluate_loss(model, val_input, criterion)
+                val_losses.append(avg_val_loss)
+                scheduler.step(avg_val_loss)
+                if early_stop.step(avg_val_loss, model):
+                    logger.info(f"Early stopping triggered at epoch {epoch+1}")
+                    break
+
+        early_stop.restore_best(model)
+
         model.eval()
         all_preds, all_true = [], []
         with torch.no_grad():
-            for bx, by in test_loader:
+            for bx, by in test_input:
                 bx = bx.to(self.device)
-                all_preds.append(model(bx).cpu().numpy())
+                all_preds.append(model(bx).squeeze().cpu().numpy())
                 all_true.append(by.numpy())
 
-        return np.concatenate(all_true), np.concatenate(all_preds).flatten()
+        return (
+            np.concatenate(all_true),
+            np.concatenate(all_preds).flatten(),
+            {"train": train_losses, "val": val_losses},
+        )
+
+    def evaluate_loss(self, model, input, criterion) -> float:
+        model.eval()
+        losses = []
+        with torch.no_grad():
+            for bx, by in input:
+                bx = bx.to(self.device)
+                by = by.to(self.device)
+                pred = model(bx).squeeze()
+                losses.append(criterion(pred, by).item())
+        return float (np.mean(losses))
     
-def run_loso_exp(model_type="MLR"):
-    logger.info(f"Starting LOSO experiment using {model_type}")
+# Manages the complete intra-subject experiment for each participant:
+# data splitting, normalization, dataset/DataLoader creation, model training,
+# evaluation, and saving the results.
+def run_experiment(model_type: str = "CNN_BiLSTM"):
+    logger.info(f"Starting INTRA | Model: {model_type} | Feature_cols: {config.Feature_cols}")
     engine = Engine(model_type)
     results = {}
 
     for test_sub in config.Participants:
-        train_subs = [s for s in config.Participants if s != test_sub]
+        logger.info(f"  Subject: {test_sub}")
+        path = config.Output_path / f"{test_sub}_ready.csv"
+        full_df = pd.read_csv(path)
+        excluded = getattr(config, "Subject_exclude_trials", {}).get(test_sub, [])
+        if excluded:
+            full_df = full_df[~full_df["trial_id"].isin(excluded)]
+            logger.info(f"  Excluded trials for {test_sub}: {excluded}")
+        split_seed = getattr(config, "Split_seed", 1)
 
-        if model_type == "MLR":
+        df_train, df_test = split_by_trial(full_df, test_frac=0.2, seed=split_seed)
 
-            # We need the 'Side' column before we drop it for the math
-            path = config.Output_path / f"{test_sub}_combined_ready.csv"
-            test_df = pd.read_csv(path)
-            side_labels = test_df['Side'].values # Grab side
-            # Get Arrays
-            train_input = data_loader.get_mlr_data(train_subs)
-            test_input = data_loader.get_mlr_data([test_sub])
-        else:
-            path = config.Output_path / f"{test_sub}_combined_ready.csv"
-            side_labels = pd.read_csv(path)['Side'].values[config.Window_Size:] # Match window offset
-            # Get DataLoaders
-            train_input = data_loader.get_torch_loader(train_subs, config.Window_Size, config.Batch_Size, shuffle=True)
-            test_input  = data_loader.get_torch_loader([test_sub], config.Window_Size, config.Batch_Size, shuffle=False)
+        # Normalization stats (from train only — prevents data leakage)
+        mu_y = df_train["Knee_Angle_X"].mean()
+        sigma_y = df_train["Knee_Angle_X"].std()
 
-        y_true, y_pred = engine.train_and_predict(train_input, test_input)
-        results[test_sub] = {"true": y_true, "pred": y_pred, "side": side_labels}
+        sides_present = df_train["Side"].unique()
 
-    joblib.dump(results, config.Output_path / f"loso_{model_type}_results.pkl")
-    logger.info(f"LOSO experiment for {model_type} finished and saved.")
+        # Only use the channels listed in config.Feature_cols - (e.g. drop RF/TA) just by editing config.py.
+        emg_cols = [c for c in config.Feature_cols if c in df_train.columns]
+    
+        n_features = len(emg_cols)
+        # Calculate EMG normalization statistics separately for each side.
+        # `s` is the current side (e.g., "R" or "L") from "sides_present".
+        # Select training rows where Side == s and calculate the mean/std
+        mu_x    = {s: df_train.loc[df_train["Side"] == s, emg_cols].mean() for s in sides_present}
+        sigma_x = {s: df_train.loc[df_train["Side"] == s, emg_cols].std()  for s in sides_present}
 
-# Within-Subject (Intra-Subject)
-def run_intra_subject_exp(model_type="MLR"):
-    logger.info(f"Starting Intra-Subject Experiment using {model_type}")
-    engine = Engine(model_type)
-    results = {}
+        # Build inputs 
+        # split training data ino train and validation
+        df_train_sub, df_val = split_by_trial(df_train, test_frac=0.15, seed=split_seed)
+        # Restrict each split's dataframe selected emg_cols, so GaitDataset (which treats every
+        # remaining column as a feature) only ever sees the channels we actually want.
+        keep_cols = ["Knee_Angle_X", "Side", "trial_id", "Frame"] + emg_cols
+        def restrict(df):
+            return df[[c for c in keep_cols if c in df.columns]]
 
-    for sub in config.Participants:
-        # Load the labels for the specific participant
-        path = config.Output_path / f"{sub}_combined_ready.csv"
-        df = pd.read_csv(path)
-        split = int(len(df) * 0.8)
+        # Create datasets for training, validation, and test sets
+        Window_Size = config.Window_Size
+        train_ds = GaitDataset(restrict(df_train_sub), Window_Size, mu_y, sigma_y, mu_x, sigma_x)
+        val_ds   = GaitDataset(restrict(df_val),       Window_Size, mu_y, sigma_y, mu_x, sigma_x)
+        test_ds  = GaitDataset(restrict(df_test),      Window_Size, mu_y, sigma_y, mu_x, sigma_x)
+        # wrap them in DataLoader
+        train_in = DataLoader(train_ds, batch_size=config.Batch_Size, shuffle=True)
+        val_in   = DataLoader(val_ds,   batch_size=config.Batch_Size, shuffle=False)
+        test_in  = DataLoader(test_ds,  batch_size=config.Batch_Size, shuffle=False)
 
-        if model_type == "MLR":
-            x, y = data_loader.get_mlr_data([sub])
-            train_input = (x[:split], y[:split])
-            test_input = (x[split:], y[split:])
-            side_labels = df['Side'].values[split:] # Grab side labels from index 'split' to the end
-        else:
-            # For Torch, we split the CSV first (simplest way)
-            train_input, test_input = data_loader.get_intra_loader(sub, config.Window_Size, config.Batch_Size)
-            side_labels = df['Side'].values[split + config.Window_Size:]# Match window offset (skip first 50 frames of the test set)
-        y_true, y_pred = engine.train_and_predict(train_input, test_input)
-        results[sub] = {"true": y_true, "pred": y_pred, "side": side_labels}
+        # Train & Predict 
+        torch.manual_seed(0)
+        np.random.seed(0)
+        y_t, y_p, loss_h = engine.train_and_predict(train_in, test_in, val_in, n_features=n_features)
 
-    joblib.dump(results, config.Output_path / f"intra_{model_type}_results.pkl")
-    logger.info(f"Intra-Subject experiment for {model_type} finished and saved.")
+        results[test_sub] = {
+            "true": y_t,
+            "pred": y_p,
+            "loss_history": loss_h,
+            "stats": {"mu": mu_y, "sigma": sigma_y},
+        }
+
+    out_path = config.Output_path / f"intra_{model_type}_results.pkl"
+    joblib.dump(results, out_path)
+    logger.info(f"Saved → {out_path}")
+
 
 if __name__ == "__main__":
-    # CHOOSE YOUR MODEL: "MLR", "CNN_LSTM", "BiLSTM_CNN", "CNN_BiLSTM_Attention"
-    My_model = "MLR" 
-
-    # CHOOSE YOUR EXPERIMENT (Uncomment only one):
-    run_loso_exp(model_type=My_model)
-    # run_intra_subject_experiment(model_type=MY_MODEL)
+    Selected_model = "CNN"
+    run_experiment(model_type=Selected_model)
