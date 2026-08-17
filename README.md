@@ -14,7 +14,7 @@ config.py         - all settings (paths, window size, hyperparameters)
 **Setup / Installation:**
 ### Requirements
 - Python 3.9
-**Data:**
+## **Data:**
 This dataset contains EMG and kinematic recordings from 3 healthy subjects (one excluded during preprocessing, leaving 2 subjects in the final analysis). Recordings were collected bilaterally (both Right and Left legs). The sampling rate for EMG is 1000 Hz, downsampled to 100 Hz during preprocessing to match the kinematic sampling rate.
 EMG channels: Rectus Femoris (RF), Biceps Femoris (BF), Tibialis Anterior (TA), Soleus (SOL).
 Target: Knee flexion/extension angle (`Knee_Angle_X`), recorded via motion capture at 100 Hz.
