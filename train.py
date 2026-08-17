@@ -124,7 +124,7 @@ class Engine:
 # data splitting, normalization, dataset/DataLoader creation, model training,
 # evaluation, and saving the results.
 def run_experiment(model_type: str = "CNN_BiLSTM"):
-    logger.info(f"Starting INTRA | Model: {model_type} | Feature_cols: {config.Feature_cols}")
+    logger.info(f"Starting intra | Model: {model_type} | Feature_cols: {config.Feature_cols}")
     engine = Engine(model_type)
     results = {}
 
