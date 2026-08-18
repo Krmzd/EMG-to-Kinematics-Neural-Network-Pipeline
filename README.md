@@ -31,3 +31,10 @@ Results below are from the INTRA-subject experiment (trial-level train/test spli
 | LSTM  | 4.94 |  8.31  |  0.77  |
 | CNN  | 5.56 |  8.49  |  0.76  |
 
+![CNN_01 Average Gait Cycle](figures/CNN_01_avg%20gait%20cycle.png)
+![CNN_01 Learning Curve](figures/CNN_01_lc.png)
+![CNN_01 Tracking Performance](figures/CNN_01_tp.png)
+
+![CNN_02 Average Gait Cycle](figures/CNN_02_avg%20gait%20cycle.png)
+![CNN_02 Learning Curve](figures/CNN_02_lc.png)
+![CNN_02 Tracking Performance](figures/CNN_02_tp.png)
